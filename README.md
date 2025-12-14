@@ -2,7 +2,11 @@
 
 A modern fullstack chat application with semantic search capabilities, built with Next.js, React, and Supabase.
 
-## 🚀 Features
+**Backend API**: [https://choricana-a5jy.vercel.app](https://choricana-a5jy.vercel.app)  
+**API Documentation**: [https://choricana-a5jy.vercel.app/api-docs](https://choricana-a5jy.vercel.app/api-docs)
+
+
+## Features
 
 - **Real-time Chat**: Create conversations, send messages, and manage users
 - **Semantic Search**: AI-powered search using vector embeddings to find messages by meaning, not just keywords
@@ -12,7 +16,7 @@ A modern fullstack chat application with semantic search capabilities, built wit
 - **RESTful API**: Complete API with Swagger documentation
 - **Modern UI**: Built with shadcn/ui components and Tailwind CSS
 
-## 🏗️ Architecture
+## Architecture
 
 ### Backend (`Chat-Backend/`)
 - **Framework**: Next.js 14 (App Router)
@@ -27,7 +31,7 @@ A modern fullstack chat application with semantic search capabilities, built wit
 - **State Management**: TanStack Query (React Query)
 - **Routing**: React Router
 
-## 📚 Key Libraries
+## Key Libraries
 
 ### Backend
 - `next` - React framework for production
@@ -43,7 +47,7 @@ A modern fullstack chat application with semantic search capabilities, built wit
 - `lucide-react` - Icon library
 - `zod` - Schema validation
 
-## 🔍 Semantic Search
+## Semantic Search
 
 The application features advanced semantic search powered by vector embeddings:
 
@@ -52,7 +56,7 @@ The application features advanced semantic search powered by vector embeddings:
 3. **Similarity Search**: Uses cosine similarity to find semantically similar messages
 4. **AI Enhancement**: Search results include AI-generated summaries for better context
 
-## 🛠️ Setup Instructions
+## Setup Instructions
 
 ### Prerequisites
 - Node.js 18+ and npm
@@ -132,7 +136,7 @@ Frontend runs on `http://localhost:8080`
 
 View full API documentation at `/api-docs` when backend is running.
 
-## 🔐 Environment Variables
+## Environment Variables
 
 ### Backend (`Chat-Backend/.env.local`)
 - `NEXT_PUBLIC_SUPABASE_URL` - Supabase project URL
@@ -143,7 +147,7 @@ View full API documentation at `/api-docs` when backend is running.
 ### Frontend (`Chat-UI/.env.local`)
 - `VITE_API_BASE_URL` - Backend API URL (defaults to Vercel deployment)
 
-## 🚢 Deployment
+## Deployment
 
 ### Backend (Vercel)
 1. Connect GitHub repository to Vercel
@@ -155,7 +159,7 @@ View full API documentation at `/api-docs` when backend is running.
 2. Set output directory: `dist`
 3. Set environment variable: `VITE_API_BASE_URL` to your backend URL
 
-## 📝 Project Structure
+## Project Structure
 
 ```
 chorikana/
@@ -175,7 +179,7 @@ chorikana/
 └── README.md
 ```
 
-## 🧪 Testing
+## Testing
 
 ### Backfill Embeddings
 If you have existing messages without embeddings:
@@ -189,12 +193,3 @@ curl -X POST http://localhost:3000/api/messages/backfill \
   -H "Content-Type: application/json" \
   -d '{"batchSize": 10, "limit": 100}'
 ```
-
-## 📄 License
-
-Private project
-
-## 🤝 Contributing
-
-This is a private project. For questions or issues, contact the repository owner.
-
