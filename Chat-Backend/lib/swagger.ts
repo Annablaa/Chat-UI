@@ -436,13 +436,18 @@ export const getSwaggerSpec = () => {
       '/api/search': {
         post: {
           summary: 'Semantic Search',
-          description: 'Search messages using semantic similarity. Converts the query to an embedding and finds messages with similar embeddings using cosine similarity.',
+          description: 'Search messages using semantic similarity (vector search). How it works: 1) Converts the search query text into a vector embedding using AI, 2) Compares the query embedding with message embeddings using cosine similarity, 3) Returns messages with similarity scores above the threshold, 4) Optionally enhances results with AI-generated summary. Features: Uses pgvector for efficient vector similarity search (if available), falls back to in-memory cosine similarity calculation if RPC function is unavailable, AI-enhanced summaries provide context about search results, handles edge cases (no results, threshold too high, etc.). Note: Messages must have embeddings to be searchable. Use /api/messages/backfill to add embeddings to existing messages.',
           tags: ['Search'],
           requestBody: {
             required: true,
             content: {
               'application/json': {
                 schema: { $ref: '#/components/schemas/SearchRequest' },
+                example: {
+                  query: 'What was decided about payment limits?',
+                  limit: 10,
+                  threshold: 0.4
+                }
               },
             },
           },
@@ -452,11 +457,51 @@ export const getSwaggerSpec = () => {
               content: {
                 'application/json': {
                   schema: { $ref: '#/components/schemas/SearchResponse' },
+                  example: {
+                    query: 'What was decided about payment limits?',
+                    results: [
+                      {
+                        id: '550e8400-e29b-41d4-a716-446655440000',
+                        conversation_id: '550e8400-e29b-41d4-a716-446655440001',
+                        author_id: '550e8400-e29b-41d4-a716-446655440002',
+                        content: 'For standard accounts, I\'d suggest a $10,000 daily limit.',
+                        created_at: '2024-01-15T10:30:00Z',
+                        similarity: 0.8542
+                      }
+                    ],
+                    count: 5,
+                    summary: 'These messages discuss payment validation requirements and transaction limits for different account types.'
+                  }
                 },
               },
             },
-            '400': { $ref: '#/components/responses/BadRequest' },
-            '500': { $ref: '#/components/responses/ServerError' },
+            '400': { 
+              description: 'Bad request - query is missing or invalid',
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'object',
+                    properties: {
+                      message: { type: 'string', example: 'Search query is required and must be a non-empty string' }
+                    }
+                  }
+                }
+              }
+            },
+            '500': { 
+              description: 'Server error - embedding generation failed or database error',
+              content: {
+                'application/json': {
+                  schema: {
+                    type: 'object',
+                    properties: {
+                      message: { type: 'string', example: 'Failed to generate embedding for search query' },
+                      error: { type: 'string' }
+                    }
+                  }
+                }
+              }
+            },
           },
         },
       },
@@ -770,9 +815,28 @@ export const getSwaggerSpec = () => {
         SearchRequest: {
           type: 'object',
           properties: {
-            query: { type: 'string', example: 'What was decided about payment limits?', description: 'Search query text' },
-            limit: { type: 'number', example: 10, default: 10, description: 'Maximum number of results to return' },
-            threshold: { type: 'number', example: 0.4, default: 0.4, description: 'Minimum similarity score (0-1) for results' },
+            query: { 
+              type: 'string', 
+              example: 'What was decided about payment limits?', 
+              description: 'Search query text. Will be converted to an embedding for semantic search. Supports natural language queries.',
+              minLength: 1
+            },
+            limit: { 
+              type: 'number', 
+              example: 10, 
+              default: 10, 
+              description: 'Maximum number of results to return. Default: 10',
+              minimum: 1,
+              maximum: 100
+            },
+            threshold: { 
+              type: 'number', 
+              example: 0.4, 
+              default: 0.4, 
+              description: 'Minimum cosine similarity score (0-1) for results. Higher values return more relevant but fewer results. If no results match threshold, top results are returned anyway. Default: 0.4',
+              minimum: 0,
+              maximum: 1
+            },
           },
           required: ['query'],
         },
@@ -791,11 +855,33 @@ export const getSwaggerSpec = () => {
         SearchResponse: {
           type: 'object',
           properties: {
-            query: { type: 'string', example: 'What was decided about payment limits?' },
-            results: { type: 'array', items: { $ref: '#/components/schemas/SearchResult' } },
-            count: { type: 'number', example: 5, description: 'Number of results returned' },
-            summary: { type: 'string', example: 'These messages discuss payment validation requirements and transaction limits for different account types.', description: 'AI-generated summary of the search results (optional)' },
-            warning: { type: 'string', description: 'Warning message if results were adjusted (optional)' },
+            query: { 
+              type: 'string', 
+              example: 'What was decided about payment limits?',
+              description: 'The original search query'
+            },
+            results: { 
+              type: 'array', 
+              items: { $ref: '#/components/schemas/SearchResult' },
+              description: 'Array of matching messages sorted by similarity (highest first)'
+            },
+            count: { 
+              type: 'number', 
+              example: 5, 
+              description: 'Number of results returned'
+            },
+            summary: { 
+              type: 'string', 
+              example: 'These messages discuss payment validation requirements and transaction limits for different account types.', 
+              description: 'AI-generated summary of the search results. Generated using Google AI to provide context about the matched messages. Optional - may not be present if AI enhancement fails or is unavailable.',
+              nullable: true
+            },
+            warning: { 
+              type: 'string', 
+              description: 'Warning message if results were adjusted (e.g., when no results match the threshold, top results are returned anyway). Optional.',
+              nullable: true,
+              example: 'No results found with similarity >= 0.4. Showing top results.'
+            },
           },
           required: ['query', 'results', 'count'],
         },
