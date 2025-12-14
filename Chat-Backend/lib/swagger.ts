@@ -433,6 +433,75 @@ export const getSwaggerSpec = () => {
           },
         },
       },
+      '/api/search': {
+        post: {
+          summary: 'Semantic Search',
+          description: 'Search messages using semantic similarity. Converts the query to an embedding and finds messages with similar embeddings using cosine similarity.',
+          tags: ['Search'],
+          requestBody: {
+            required: true,
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/SearchRequest' },
+              },
+            },
+          },
+          responses: {
+            '200': {
+              description: 'Search completed successfully',
+              content: {
+                'application/json': {
+                  schema: { $ref: '#/components/schemas/SearchResponse' },
+                },
+              },
+            },
+            '400': { $ref: '#/components/responses/BadRequest' },
+            '500': { $ref: '#/components/responses/ServerError' },
+          },
+        },
+      },
+      '/api/messages/backfill': {
+        get: {
+          summary: 'Get Backfill Statistics',
+          description: 'Get statistics about messages that need embeddings. Returns counts of messages with and without embeddings.',
+          tags: ['Messages'],
+          responses: {
+            '200': {
+              description: 'Statistics retrieved successfully',
+              content: {
+                'application/json': {
+                  schema: { $ref: '#/components/schemas/BackfillStats' },
+                },
+              },
+            },
+            '500': { $ref: '#/components/responses/ServerError' },
+          },
+        },
+        post: {
+          summary: 'Backfill Embeddings',
+          description: 'Add embeddings to existing messages that don\'t have them. Processes messages in batches to avoid rate limiting.',
+          tags: ['Messages'],
+          requestBody: {
+            required: false,
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/BackfillRequest' },
+              },
+            },
+          },
+          responses: {
+            '200': {
+              description: 'Backfill completed',
+              content: {
+                'application/json': {
+                  schema: { $ref: '#/components/schemas/BackfillResponse' },
+                },
+              },
+            },
+            '500': { $ref: '#/components/responses/ServerError' },
+          },
+        },
+      },
       '/api/tasks': {
         get: {
           summary: 'Get Tasks',
@@ -629,6 +698,7 @@ export const getSwaggerSpec = () => {
             is_ai: { type: 'boolean', example: false },
             task_proposal: { type: 'object', nullable: true, description: 'JSONB field' },
             search_result: { type: 'object', nullable: true, description: 'JSONB field' },
+            embedding: { type: 'array', items: { type: 'number' }, nullable: true, description: '768-dimensional vector embedding for semantic search' },
             created_at: { type: 'string', format: 'date-time' },
           },
           required: ['id', 'conversation_id', 'author_id', 'content', 'is_ai'],
@@ -644,6 +714,7 @@ export const getSwaggerSpec = () => {
             search_result: { type: 'object', nullable: true },
           },
           required: ['conversation_id', 'author_id', 'content'],
+          description: 'Note: Embedding is automatically generated when message is created. If embedding generation fails, the message is still created without embedding.',
         },
         UpdateMessageDto: {
           type: 'object',
@@ -695,6 +766,65 @@ export const getSwaggerSpec = () => {
             status: { type: 'string', enum: ['pending', 'confirmed', 'rejected'] },
             proposed_by: { type: 'string' },
           },
+        },
+        SearchRequest: {
+          type: 'object',
+          properties: {
+            query: { type: 'string', example: 'What was decided about payment limits?', description: 'Search query text' },
+            limit: { type: 'number', example: 10, default: 10, description: 'Maximum number of results to return' },
+            threshold: { type: 'number', example: 0.4, default: 0.4, description: 'Minimum similarity score (0-1) for results' },
+          },
+          required: ['query'],
+        },
+        SearchResult: {
+          type: 'object',
+          properties: {
+            id: { type: 'string', example: '550e8400-e29b-41d4-a716-446655440000' },
+            conversation_id: { type: 'string', example: '550e8400-e29b-41d4-a716-446655440001' },
+            author_id: { type: 'string', example: '550e8400-e29b-41d4-a716-446655440002' },
+            content: { type: 'string', example: 'For standard accounts, I\'d suggest a $10,000 daily limit.' },
+            created_at: { type: 'string', format: 'date-time' },
+            similarity: { type: 'number', example: 0.85, description: 'Cosine similarity score (0-1)' },
+          },
+          required: ['id', 'conversation_id', 'author_id', 'content', 'similarity'],
+        },
+        SearchResponse: {
+          type: 'object',
+          properties: {
+            query: { type: 'string', example: 'What was decided about payment limits?' },
+            results: { type: 'array', items: { $ref: '#/components/schemas/SearchResult' } },
+            count: { type: 'number', example: 5, description: 'Number of results returned' },
+            summary: { type: 'string', example: 'These messages discuss payment validation requirements and transaction limits for different account types.', description: 'AI-generated summary of the search results (optional)' },
+            warning: { type: 'string', description: 'Warning message if results were adjusted (optional)' },
+          },
+          required: ['query', 'results', 'count'],
+        },
+        BackfillRequest: {
+          type: 'object',
+          properties: {
+            batchSize: { type: 'number', example: 10, default: 10, description: 'Number of messages to process in each batch' },
+            limit: { type: 'number', example: 100, description: 'Maximum number of messages to process (optional)' },
+          },
+        },
+        BackfillResponse: {
+          type: 'object',
+          properties: {
+            message: { type: 'string', example: 'Backfill completed' },
+            processed: { type: 'number', example: 95, description: 'Number of messages successfully processed' },
+            errors: { type: 'number', example: 5, description: 'Number of messages that failed to process' },
+            total: { type: 'number', example: 100, description: 'Total number of messages processed' },
+            errorDetails: { type: 'array', items: { type: 'string' }, description: 'Detailed error messages (if any)' },
+          },
+          required: ['message', 'processed', 'errors', 'total'],
+        },
+        BackfillStats: {
+          type: 'object',
+          properties: {
+            withoutEmbeddings: { type: 'number', example: 50, description: 'Number of messages without embeddings' },
+            total: { type: 'number', example: 200, description: 'Total number of messages' },
+            withEmbeddings: { type: 'number', example: 150, description: 'Number of messages with embeddings' },
+          },
+          required: ['withoutEmbeddings', 'total', 'withEmbeddings'],
         },
       },
       responses: {

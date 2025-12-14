@@ -293,6 +293,59 @@ class ApiClient {
       method: 'DELETE',
     });
   }
+
+  // Semantic Search
+  async searchMessages(params: {
+    query: string;
+    limit?: number;
+    threshold?: number;
+  }): Promise<{
+    query: string;
+    results: Array<{
+      id: string;
+      conversation_id: string;
+      author_id: string;
+      content: string;
+      created_at?: string;
+      similarity: number;
+    }>;
+    count: number;
+    summary?: string;
+    warning?: string;
+  }> {
+    return this.request('/api/search', {
+      method: 'POST',
+      body: JSON.stringify(params),
+    });
+  }
+
+  // Backfill embeddings for existing messages
+  async backfillMessages(params?: {
+    batchSize?: number;
+    limit?: number;
+  }): Promise<{
+    message: string;
+    processed: number;
+    errors: number;
+    total: number;
+    errorDetails?: string[];
+  }> {
+    return this.request('/api/messages/backfill', {
+      method: 'POST',
+      body: JSON.stringify(params || {}),
+    });
+  }
+
+  // Get backfill statistics
+  async getBackfillStats(): Promise<{
+    withoutEmbeddings: number;
+    total: number;
+    withEmbeddings: number;
+  }> {
+    return this.request('/api/messages/backfill', {
+      method: 'GET',
+    });
+  }
 }
 
 export const api = new ApiClient(API_BASE_URL);

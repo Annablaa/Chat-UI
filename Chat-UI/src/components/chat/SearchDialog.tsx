@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Search, Calendar, User, Loader2 } from "lucide-react";
+import { useState, useEffect } from "react";
+import { Search, Calendar, User, Loader2, Sparkles } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -9,6 +9,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Message } from "./ChatMessage";
+import { api } from "@/lib/api";
 
 interface SearchReference {
   conversationId: string;
@@ -17,6 +18,7 @@ interface SearchReference {
   participant: string;
   snippet: string;
   conversationName?: string;
+  similarity?: number;
 }
 
 interface Conversation {
@@ -41,71 +43,100 @@ interface SearchDialogProps {
 export function SearchDialog({ open, onOpenChange, onSearch, allMessages = [], conversations = [], onResultClick }: SearchDialogProps) {
   const [query, setQuery] = useState("");
   const [isSearching, setIsSearching] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [results, setResults] = useState<{
     summary: string;
     references: SearchReference[];
   } | null>(null);
+  const [userCache, setUserCache] = useState<Record<string, string>>({});
+
+  // Fetch user display names
+  const fetchUserDisplayName = async (authorId: string): Promise<string> => {
+    if (userCache[authorId]) {
+      return userCache[authorId];
+    }
+
+    try {
+      const response = await api.getUsers({ id: authorId });
+      if (response.data && response.data.length > 0) {
+        const displayName = response.data[0].display_name || response.data[0].username;
+        setUserCache((prev) => ({ ...prev, [authorId]: displayName }));
+        return displayName;
+      }
+    } catch (err) {
+      console.warn('Failed to fetch user:', err);
+    }
+    return `User ${authorId.substring(0, 8)}`;
+  };
 
   const handleSearch = async () => {
     if (!query.trim()) return;
     
     setIsSearching(true);
+    setError(null);
+    setResults(null);
     
-    // Simulate semantic search (in production, this would call a backend)
-    await new Promise((resolve) => setTimeout(resolve, 1200));
-    
-    // Search across all messages
-    const lowerQuery = query.toLowerCase();
-    const matchingMessages = allMessages.filter((msg) => 
-      msg.content.toLowerCase().includes(lowerQuery) ||
-      msg.author.toLowerCase().includes(lowerQuery)
-    ).slice(0, 5); // Limit to 5 results
-    
-    // Build references with conversation and message IDs
-    const references: SearchReference[] = matchingMessages.map((msg) => ({
-      conversationId: msg.conversationId,
-      messageId: msg.id,
-      date: msg.timestamp,
-      participant: msg.author,
-      snippet: msg.content.substring(0, 100) + (msg.content.length > 100 ? "..." : ""),
-      conversationName: conversations.find(c => c.id === msg.conversationId)?.name || `Conversation ${msg.conversationId}`,
-    }));
-    
-    // If no matches found, use demo results
-    const demoResults = {
-      summary: matchingMessages.length > 0 
-        ? `Found ${matchingMessages.length} relevant message${matchingMessages.length > 1 ? 's' : ''} about "${query}".`
-        : `Found relevant discussions about "${query}". The team has been actively discussing this topic, with key decisions made around transaction limits and validation requirements.`,
-      references: references.length > 0 ? references : [
-        {
-          conversationId: "conv-1",
-          messageId: "3",
-          date: "Dec 10, 2024",
-          participant: "Sarah Chen",
-          snippet: "For standard accounts, I'd suggest a $10,000 daily limit. Premium accounts could go up to $50,000.",
-          conversationName: "payments-team",
-        },
-        {
-          conversationId: "conv-1",
-          messageId: "5",
-          date: "Dec 11, 2024",
-          participant: "Marcus Williams",
-          snippet: "We already have PAY-23 for payment validation. Can you update that one with these new requirements?",
-          conversationName: "payments-team",
-        },
-        {
-          conversationId: "conv-1",
-          messageId: "1",
-          date: "Dec 9, 2024",
-          participant: "Sarah Chen",
-          snippet: "Good morning team! I wanted to discuss the payment validation changes we need for the new release.",
-          conversationName: "payments-team",
-        },
-      ],
-    };
-    
-    setResults(demoResults);
-    setIsSearching(false);
+    try {
+      // Call semantic search API
+      const searchResults = await api.searchMessages({
+        query: query.trim(),
+        limit: 10,
+        threshold: 0.4, // Default threshold for semantic search
+      });
+
+      if (!searchResults.results || searchResults.results.length === 0) {
+        setResults({
+          summary: searchResults.summary || `No semantically similar messages found for "${query}". Try rephrasing your search or using different keywords.`,
+          references: [],
+        });
+        setIsSearching(false);
+        return;
+      }
+
+      // Fetch user display names for all results
+      const authorIds = [...new Set(searchResults.results.map(r => r.author_id))];
+      const userPromises = authorIds.map(id => fetchUserDisplayName(id));
+      await Promise.all(userPromises);
+
+      // Format results with user names and dates
+      const references: SearchReference[] = await Promise.all(
+        searchResults.results.map(async (result) => {
+          const displayName = await fetchUserDisplayName(result.author_id);
+          const date = result.created_at 
+            ? new Date(result.created_at).toLocaleDateString('en-US', { 
+                month: 'short', 
+                day: 'numeric', 
+                year: 'numeric' 
+              })
+            : 'Unknown date';
+          
+          const conversation = conversations.find(c => c.id === result.conversation_id);
+          
+          return {
+            conversationId: result.conversation_id,
+            messageId: result.id,
+            date,
+            participant: displayName,
+            snippet: result.content.substring(0, 150) + (result.content.length > 150 ? "..." : ""),
+            conversationName: conversation?.name || `Conversation ${result.conversation_id.substring(0, 8)}`,
+            similarity: result.similarity,
+          };
+        })
+      );
+
+      // Use AI-generated summary if available, otherwise use default
+      const summary = searchResults.summary || `Found ${searchResults.count} semantically relevant message${searchResults.count > 1 ? 's' : ''} for "${query}". Results are ranked by relevance.`;
+
+      setResults({
+        summary,
+        references,
+      });
+    } catch (err) {
+      console.error('Search error:', err);
+      setError(err instanceof Error ? err.message : 'Failed to perform semantic search. Please try again.');
+    } finally {
+      setIsSearching(false);
+    }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -126,15 +157,15 @@ export function SearchDialog({ open, onOpenChange, onSearch, allMessages = [], c
       <DialogContent className="sm:max-w-[600px] max-h-[80vh] overflow-hidden flex flex-col">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Search className="h-5 w-5 text-primary" />
-            Semantic Search
+            <Sparkles className="h-5 w-5 text-primary" />
+            AI Semantic Search
           </DialogTitle>
         </DialogHeader>
 
         {/* Search input */}
         <div className="flex gap-2">
           <Input
-            placeholder="Search past conversations... (e.g., 'What was decided about payment limits?')"
+            placeholder="Search by meaning... (e.g., 'What was decided about payment limits?')"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={handleKeyDown}
@@ -144,10 +175,20 @@ export function SearchDialog({ open, onOpenChange, onSearch, allMessages = [], c
             {isSearching ? (
               <Loader2 className="h-4 w-4 animate-spin" />
             ) : (
-              <Search className="h-4 w-4" />
+              <>
+                <Sparkles className="h-4 w-4 mr-1" />
+                AI Search
+              </>
             )}
           </Button>
         </div>
+
+        {/* Error message */}
+        {error && (
+          <div className="mt-2 p-3 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive text-sm">
+            {error}
+          </div>
+        )}
 
         {/* Results area */}
         <div className="flex-1 overflow-y-auto mt-4">
@@ -197,6 +238,11 @@ export function SearchDialog({ open, onOpenChange, onSearch, allMessages = [], c
                           <User className="h-3 w-3" />
                           {ref.participant}
                         </span>
+                        {ref.similarity !== undefined && (
+                          <span className="ml-auto text-primary font-medium">
+                            {Math.round(ref.similarity * 100)}% match
+                          </span>
+                        )}
                       </div>
                       <p className="text-sm text-foreground/80 italic">"{ref.snippet}"</p>
                       <p className="text-xs text-primary mt-2">Click to view in chat →</p>
@@ -212,11 +258,11 @@ export function SearchDialog({ open, onOpenChange, onSearch, allMessages = [], c
             </div>
           )}
 
-          {!results && !isSearching && (
+          {!results && !isSearching && !error && (
             <div className="text-center py-12 text-muted-foreground">
-              <Search className="h-12 w-12 mx-auto mb-4 opacity-20" />
+              <Sparkles className="h-12 w-12 mx-auto mb-4 opacity-20" />
               <p>Search for topics, decisions, or discussions</p>
-              <p className="text-sm mt-1">AI will find semantically relevant conversations</p>
+              <p className="text-sm mt-1">AI understands meaning, not just keywords</p>
             </div>
           )}
         </div>

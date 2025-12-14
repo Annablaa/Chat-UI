@@ -42,7 +42,7 @@ export function ChatHeader({
             <span className="text-primary font-medium text-sm">AI-Agent</span>
           </div>
 
-          {/* Semantic Search button */}
+          {/* AI Semantic Search button */}
           <Button
             variant="ghost"
             size="sm"
@@ -50,7 +50,7 @@ export function ChatHeader({
             className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground hover:bg-accent"
           >
             <Search className="h-4 w-4" />
-            <span className="hidden sm:inline">Search</span>
+            <span className="hidden sm:inline">AI Search</span>
           </Button>
 
           {/* Task Management button */}

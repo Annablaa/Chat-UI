@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { getSupabaseAdmin } from '@/lib/supabase/admin'
 import { CreateMessageDto, UpdateMessageDto } from '@/lib/types/entities'
 import { corsHeaders } from '@/lib/cors'
+import { generateEmbedding } from '@/lib/ai/embeddings'
 
 // Handle OPTIONS (preflight) requests
 export async function OPTIONS() {
@@ -77,19 +78,34 @@ export async function POST(request: Request) {
     const messageId = crypto.randomUUID()
     const supabaseAdmin = getSupabaseAdmin()
 
+    // Generate embedding for semantic search
+    let embedding: number[] | null = null
+    try {
+      embedding = await generateEmbedding(body.content)
+    } catch (embeddingError) {
+      // Log error but don't fail message creation if embedding fails
+      console.warn('Failed to generate embedding for message:', embeddingError instanceof Error ? embeddingError.message : 'Unknown error')
+      // Continue without embedding - message will still be created
+    }
+
+    const insertData: any = {
+      id: messageId,
+      conversation_id: body.conversation_id,
+      author_id: body.author_id,
+      content: body.content,
+      is_ai: body.is_ai || false,
+      task_proposal: body.task_proposal || null,
+      search_result: body.search_result || null,
+    }
+
+    // Only add embedding if it was successfully generated
+    if (embedding) {
+      insertData.embedding = embedding
+    }
+
     const { data, error } = await supabaseAdmin
       .from('messages')
-      .insert([
-        {
-          id: messageId,
-          conversation_id: body.conversation_id,
-          author_id: body.author_id,
-          content: body.content,
-          is_ai: body.is_ai || false,
-          task_proposal: body.task_proposal || null,
-          search_result: body.search_result || null,
-        },
-      ])
+      .insert([insertData])
       .select()
       .single()
 
